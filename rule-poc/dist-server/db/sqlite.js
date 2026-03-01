@@ -1,44 +1,36 @@
-import fs from "fs";
-import path from "path";
 import Database from "better-sqlite3";
-import { fileURLToPath } from "url";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-function ensureDir(p) {
-    if (!fs.existsSync(p))
-        fs.mkdirSync(p, { recursive: true });
-}
-export function openDb() {
-    const dbDir = path.resolve(__dirname, "../../data");
-    ensureDir(dbDir);
-    const dbPath = path.join(dbDir, "rule-poc.sqlite");
-    const db = new Database(dbPath);
+export function openDb(filePath) {
+    const db = new Database(filePath);
     db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
-    migrate(db);
-    return db;
-}
-function migrate(db) {
+    // 既存テーブル（PoC）
     db.exec(`
+    CREATE TABLE IF NOT EXISTS stock_master (
+      code TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      market TEXT NOT NULL,
+      industry TEXT NOT NULL DEFAULT ''
+    );
+
     CREATE TABLE IF NOT EXISTS earnings_watchlist (
-      date TEXT PRIMARY KEY,
-      key TEXT NOT NULL,
-      items_json TEXT NOT NULL,
-      fetched_at TEXT NOT NULL
+      key TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      json TEXT NOT NULL,
+      fetchedAt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS rankings (
-      date TEXT PRIMARY KEY,
-      up_json TEXT NOT NULL,
-      down_json TEXT NOT NULL,
-      fetched_at TEXT NOT NULL
+      key TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      json TEXT NOT NULL,
+      fetchedAt TEXT NOT NULL
     );
 
-    -- 汎用JSONキャッシュ（tomorrow-picks / pullback-chances 等）
-    CREATE TABLE IF NOT EXISTS kv (
+    -- ✅ 追加: 汎用KV（pullback/tomorrow等のキャッシュ）
+    CREATE TABLE IF NOT EXISTS kv_store (
       key TEXT PRIMARY KEY,
-      value_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      json TEXT NOT NULL,
+      fetchedAt TEXT NOT NULL
     );
   `);
+    return db;
 }

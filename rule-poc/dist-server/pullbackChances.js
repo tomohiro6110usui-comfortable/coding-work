@@ -1,216 +1,209 @@
 import { getTomorrowPicksUniverse } from "./tomorrowPicks.js";
-function qStr(v) {
-    return String(v ?? "").trim();
+const FALLBACK_UNIVERSE_CODES = [
+    "1306", // TOPIX連動ETF
+    "1321", // 日経225連動ETF
+    "1570", // 日経レバ
+    "2914", // JT
+    "4502", // 武田
+    "5401", // 日本製鉄
+    "6501", // 日立
+    "6758", // ソニーG
+    "6861", // キーエンス
+    "7203", // トヨタ
+    "7974", // 任天堂
+    "8035", // 東エレ
+    "8058", // 三菱商事
+    "8306", // 三菱UFJ
+    "8316", // 三井住友FG
+    "9432", // NTT
+    "9433", // KDDI
+    "9983", // ファストリ
+    "9984", // SBG
+];
+function keyOf(date, universeKey) {
+    return `${date}_pullback-chances_${universeKey}`;
 }
-function isRefresh(req) {
-    return qStr(req.query.refresh) === "1";
-}
-function nowIso() {
-    return new Date().toISOString();
-}
-function makePullbackKey(date) {
-    return `${date}_pullback-chances`;
-}
-function toNum(x) {
-    const n = Number(x);
-    return Number.isFinite(n) ? n : NaN;
-}
-function parseStooqCsv(csv) {
-    const lines = csv.trim().split("\n");
-    if (lines.length <= 1)
-        return [];
-    const out = [];
-    for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",");
-        if (cols.length < 6)
-            continue;
-        const date = cols[0];
-        const open = toNum(cols[1]);
-        const high = toNum(cols[2]);
-        const low = toNum(cols[3]);
-        const close = toNum(cols[4]);
-        const volume = toNum(cols[5]);
-        if (!date || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close))
-            continue;
-        out.push({ date, open, high, low, close, volume: Number.isFinite(volume) ? volume : 0 });
-    }
-    return out;
-}
-function yyyymmdd(d) {
+function ymd(d) {
     const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}${m}${day}`;
+    const m = `${d.getMonth() + 1}`.padStart(2, "0");
+    const dd = `${d.getDate()}`.padStart(2, "0");
+    return `${y}-${m}-${dd}`;
 }
-function parseDate(dateStr) {
-    // dateStr: YYYY-MM-DD
-    const [y, m, d] = dateStr.split("-").map((x) => Number(x));
-    return new Date(y, (m ?? 1) - 1, d ?? 1);
+function computeFrom(date) {
+    const base = new Date(`${date}T00:00:00+09:00`);
+    const from = new Date(base.getTime() - 90 * 24 * 60 * 60 * 1000);
+    return ymd(from);
 }
-async function fetchStooqDailyRange(code, from, to) {
-    const sym = `${code}.jp`;
-    const url = `https://stooq.com/q/d/?s=${encodeURIComponent(sym)}&d1=${encodeURIComponent(from)}&d2=${encodeURIComponent(to)}&i=d`;
-    const res = await fetch(url);
-    if (!res.ok)
-        throw new Error(`stooq fetch failed: ${res.status}`);
-    const text = await res.text();
-    return parseStooqCsv(text);
-}
-async function mapLimit(arr, limit, fn) {
-    const ret = new Array(arr.length);
-    let i = 0;
-    const workers = new Array(Math.min(limit, arr.length)).fill(0).map(async () => {
-        while (true) {
-            const idx = i++;
-            if (idx >= arr.length)
-                break;
-            ret[idx] = await fn(arr[idx], idx);
-        }
+async function fetchJQuantsDailyBars(args) {
+    const apiKey = process.env.JQUANTS_API_KEY;
+    if (!apiKey)
+        throw new Error("Missing env: JQUANTS_API_KEY");
+    const { code, from, to } = args;
+    const q = new URLSearchParams({ code, from, to });
+    const url = `https://api.jquants.com/v2/equities/bars/daily?${q.toString()}`;
+    const res = await fetch(url, {
+        headers: { "x-api-key": apiKey },
     });
-    await Promise.all(workers);
-    return ret;
-}
-function windowStats(rows, n) {
-    const slice = rows.slice(Math.max(0, rows.length - n));
-    if (slice.length < Math.min(5, n))
-        return null;
-    let high = -Infinity;
-    let low = Infinity;
-    for (const r of slice) {
-        if (r.high > high)
-            high = r.high;
-        if (r.low < low)
-            low = r.low;
+    if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`JQuants HTTP ${res.status} ${text}`.trim());
     }
-    const current = slice[slice.length - 1].close;
-    if (!Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(current) || low <= 0 || high <= 0)
+    const json = await res.json();
+    const rows = (json?.data ?? json?.daily_quotes ?? []);
+    return rows;
+}
+function calcMetrics(rows) {
+    if (rows.length === 0)
         return null;
-    return { high, low, current };
+    const highs = rows.map((r) => (r.AdjH ?? r.H));
+    const lows = rows.map((r) => (r.AdjL ?? r.L));
+    const closes = rows.map((r) => (r.AdjC ?? r.C));
+    const high = Math.max(...highs);
+    const low = Math.min(...lows);
+    const price = closes[closes.length - 1];
+    if (!isFinite(high) || !isFinite(low) || !isFinite(price) || low <= 0 || high <= 0)
+        return null;
+    const ratioHighLow = high / low;
+    const ratioNowHigh = price / high;
+    return { high, low, price, ratioHighLow, ratioNowHigh };
 }
-function ratio(a, b) {
-    if (!Number.isFinite(a) || !Number.isFinite(b) || b === 0)
-        return NaN;
-    return a / b;
+function sanitizeCodes(codes) {
+    const uniq = new Set();
+    for (const c of codes) {
+        const code = c.trim();
+        if (!/^\d{4}$/.test(code))
+            continue;
+        uniq.add(code);
+    }
+    return [...uniq];
 }
-async function buildPullbackChances(date, universe) {
-    // 期間は “2か月 + バッファ” をカバー（90日）
-    const end = parseDate(date);
-    const start = new Date(end.getTime());
-    start.setDate(start.getDate() - 90);
-    const d1 = yyyymmdd(start);
-    const d2 = yyyymmdd(end);
-    const infoByCode = new Map();
-    for (const u of universe)
-        infoByCode.set(u.code, u);
-    const codes = universe.map((x) => x.code).filter(Boolean);
-    const rowsList = await mapLimit(codes, 5, async (code) => {
-        try {
-            const rows = await fetchStooqDailyRange(code, d1, d2);
-            return { code, rows };
+async function resolveUniverse(args) {
+    const { provider, date } = args;
+    if (args.codes && args.codes.length > 0) {
+        const codes = sanitizeCodes(args.codes);
+        if (codes.length > 0) {
+            return {
+                universeKey: `${date}_codes_${codes.join("-")}`,
+                universeCodes: codes,
+                universeSource: "query",
+            };
         }
-        catch {
-            return { code, rows: [] };
+    }
+    try {
+        const u = await getTomorrowPicksUniverse({ provider, date, limit: 50 });
+        const codes = sanitizeCodes(u.codes);
+        if (codes.length > 0) {
+            return {
+                universeKey: u.universeKey,
+                universeCodes: codes,
+                universeSource: "tomorrow-picks",
+            };
         }
-    });
+    }
+    catch (error) {
+        return {
+            universeKey: `${date}_fallback-universe`,
+            universeCodes: FALLBACK_UNIVERSE_CODES,
+            universeSource: "fallback",
+            universeError: String(error?.message ?? error),
+        };
+    }
+    return {
+        universeKey: `${date}_fallback-universe`,
+        universeCodes: FALLBACK_UNIVERSE_CODES,
+        universeSource: "fallback",
+        universeError: "universe is empty",
+    };
+}
+export async function handlePullbackChances(args) {
+    const { provider, dbProvider, date, refresh = false } = args;
+    const universe = await resolveUniverse({ provider, date, codes: args.codes });
+    const universeKey = universe.universeKey;
+    const universeCodes = universe.universeCodes;
+    const key = keyOf(date, universeKey);
+    if (dbProvider && !refresh) {
+        const cached = await dbProvider.getJson(key);
+        if (cached)
+            return { ...cached, source: "db" };
+    }
+    const to = date;
+    const from = computeFrom(date);
+    const debug = {
+        requestedCodes: universeCodes,
+        universeSource: universe.universeSource,
+        universeError: universe.universeError,
+        from,
+        to,
+        perCode: [],
+        fetchedRowsCount: 0,
+        skippedNoRows: 0,
+        skippedTooShort: 0,
+    };
     const shortTerm = [];
     const midTerm = [];
-    for (const x of rowsList) {
-        const base = infoByCode.get(x.code);
-        if (!base)
-            continue;
-        const rows = x.rows;
-        if (!rows || rows.length < 20)
-            continue;
-        // short: 10営業日（≒2週間）
-        const s = windowStats(rows, 10);
-        if (s) {
-            const hl = ratio(s.high, s.low);
-            const ch = ratio(s.current, s.high);
-            if (hl >= 1.5 && ch <= 0.8) {
-                shortTerm.push({
-                    code: base.code,
-                    name: base.name,
-                    market: base.market,
-                    industry: "不明",
-                    price: s.current,
-                    high: s.high,
-                    low: s.low,
-                    ratioHL: hl,
-                    ratioNowHigh: ch,
-                    term: "short",
-                });
-            }
-        }
-        // mid: 40営業日（≒2か月）
-        const m = windowStats(rows, 40);
-        if (m) {
-            const hl = ratio(m.high, m.low);
-            const ch = ratio(m.current, m.high);
-            if (hl >= 2.0 && ch <= 0.8) {
-                midTerm.push({
-                    code: base.code,
-                    name: base.name,
-                    market: base.market,
-                    industry: "不明",
-                    price: m.current,
-                    high: m.high,
-                    low: m.low,
-                    ratioHL: hl,
-                    ratioNowHigh: ch,
-                    term: "mid",
-                });
-            }
-        }
-    }
-    const sorter = (a, b) => a.ratioNowHigh - b.ratioNowHigh || b.ratioHL - a.ratioHL || a.code.localeCompare(b.code);
-    shortTerm.sort(sorter);
-    midTerm.sort(sorter);
-    return { shortTerm, midTerm };
-}
-export function handlePullbackChances(args) {
-    const { provider, dbProvider } = args;
-    return async (req, res) => {
-        const date = qStr(req.query.date);
-        if (!date)
-            return res.status(400).json({ error: "date is required. e.g. 2026-02-10" });
-        const refresh = isRefresh(req);
-        const key = makePullbackKey(date);
-        if (!refresh && dbProvider) {
-            try {
-                const cached = dbProvider.getJson(key);
-                if (cached && cached.date === date && Array.isArray(cached.shortTerm) && Array.isArray(cached.midTerm)) {
-                    const out = { ...cached, source: "db" };
-                    return res.json(out);
-                }
-            }
-            catch {
-                // ignore
-            }
-        }
+    for (const code of universeCodes) {
         try {
-            const uni = await getTomorrowPicksUniverse({ date, provider, dbProvider, refresh });
-            const { shortTerm, midTerm } = await buildPullbackChances(date, uni.items);
-            const out = {
-                date,
-                key,
-                universeKey: uni.universeKey,
-                shortTerm,
-                midTerm,
-                fetchedAt: nowIso(),
-                source: "generated",
-            };
-            if (dbProvider) {
-                try {
-                    dbProvider.setJson(key, out);
-                }
-                catch {
-                    // ignore
-                }
+            const rows = await fetchJQuantsDailyBars({ code, from, to });
+            debug.perCode.push({ code, ok: true, rows: rows.length });
+            debug.fetchedRowsCount += rows.length;
+            if (!rows || rows.length === 0) {
+                debug.skippedNoRows++;
+                continue;
             }
-            return res.json(out);
+            const last10 = rows.slice(-10);
+            const last40 = rows.slice(-40);
+            if (last10.length < 10 || last40.length < 40) {
+                debug.skippedTooShort++;
+            }
+            const m10 = calcMetrics(last10);
+            const m40 = calcMetrics(last40);
+            if (!m10 || !m40)
+                continue;
+            const isShort = m10.ratioHighLow >= 1.5 && m10.ratioNowHigh <= 0.8;
+            const isMid = m40.ratioHighLow >= 2.0 && m40.ratioNowHigh <= 0.8;
+            const base = {
+                code,
+                name: "",
+                industry: "",
+            };
+            if (isShort) {
+                shortTerm.push({
+                    bucket: "short",
+                    ...base,
+                    price: m10.price,
+                    ratioHighLow: m10.ratioHighLow,
+                    ratioNowHigh: m10.ratioNowHigh,
+                    high: m10.high,
+                    low: m10.low,
+                });
+            }
+            if (isMid) {
+                midTerm.push({
+                    bucket: "mid",
+                    ...base,
+                    price: m40.price,
+                    ratioHighLow: m40.ratioHighLow,
+                    ratioNowHigh: m40.ratioNowHigh,
+                    high: m40.high,
+                    low: m40.low,
+                });
+            }
         }
         catch (e) {
-            return res.status(500).json({ error: String(e?.message ?? e) });
+            debug.perCode.push({ code, ok: false, error: String(e?.message ?? e) });
         }
+    }
+    const out = {
+        date,
+        key,
+        universeKey,
+        shortTerm,
+        midTerm,
+        fetchedAt: new Date().toISOString(),
+        source: "generated",
+        debug,
     };
+    if (dbProvider)
+        await dbProvider.setJson(key, out);
+    return out;
 }

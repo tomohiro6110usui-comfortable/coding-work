@@ -120,26 +120,16 @@ export const fetchTomorrowPicks = getTomorrowPicks;
 // --------------------
 export type PullbackTerm = "short" | "mid";
 
-// ✅ term を追加（PullbackChancesPage.tsx の x.term エラー解消）
 export type PullbackChanceItem = {
-  term: PullbackTerm; // "short" | "mid"
+  bucket: PullbackTerm;
   code: string;
-  name: string;
+  name?: string;
   industry?: string;
-
   price: number;
-
   ratioHighLow: number;
-
-  // ✅ 追加（UIで参照している）
-  ratioHL?: number;
-
   ratioNowHigh: number;
   high: number;
   low: number;
-
-  // 既存実装が _bucket も持っている場合に備えて残す（あってもなくてもOK）
-  _bucket?: string;
 };
 
 export type PullbackChancesResponse = {
@@ -147,11 +137,9 @@ export type PullbackChancesResponse = {
   date: string;
   fetchedAt: string;
   source?: ApiSource;
-
   universeKey?: string;
   shortTerm: PullbackChanceItem[];
   midTerm: PullbackChanceItem[];
-
   debug?: any;
 };
 

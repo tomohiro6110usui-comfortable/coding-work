@@ -40,6 +40,28 @@ type DailyBar = {
   AdjC?: number;
 };
 
+const FALLBACK_UNIVERSE_CODES = [
+  "1306", // TOPIX連動ETF
+  "1321", // 日経225連動ETF
+  "1570", // 日経レバ
+  "2914", // JT
+  "4502", // 武田
+  "5401", // 日本製鉄
+  "6501", // 日立
+  "6758", // ソニーG
+  "6861", // キーエンス
+  "7203", // トヨタ
+  "7974", // 任天堂
+  "8035", // 東エレ
+  "8058", // 三菱商事
+  "8306", // 三菱UFJ
+  "8316", // 三井住友FG
+  "9432", // NTT
+  "9433", // KDDI
+  "9983", // ファストリ
+  "9984", // SBG
+];
+
 function keyOf(date: string, universeKey: string) {
   return `${date}_pullback-chances_${universeKey}`;
 }
@@ -51,14 +73,9 @@ function ymd(d: Date) {
   return `${y}-${m}-${dd}`;
 }
 
-/**
- * 要件：「現在の（本当の）日付を取得」→ 12週間と3日を引く
- * ここではサーバー実行時の現在日付を基準に from を決める（本番前提）
- */
-function computeDefaultFrom(): string {
-  const now = new Date();
-  const days = 7 * 12 + 3; // 12 weeks + 3 days
-  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+function computeFrom(date: string): string {
+  const base = new Date(`${date}T00:00:00+09:00`);
+  const from = new Date(base.getTime() - 90 * 24 * 60 * 60 * 1000);
   return ymd(from);
 }
 
@@ -84,14 +101,12 @@ async function fetchJQuantsDailyBars(args: {
   }
 
   const json = await res.json();
-  // 仕様上 data 配列が返る（あなたの疎通結果も rows=243 で取得できている）
   const rows = (json?.data ?? json?.daily_quotes ?? []) as DailyBar[];
   return rows;
 }
 
 function calcMetrics(rows: DailyBar[]) {
   if (rows.length === 0) return null;
-  // Adj がある場合は Adj を優先（分割補正）
   const highs = rows.map((r) => (r.AdjH ?? r.H) as number);
   const lows = rows.map((r) => (r.AdjL ?? r.L) as number);
   const closes = rows.map((r) => (r.AdjC ?? r.C) as number);
@@ -108,6 +123,57 @@ function calcMetrics(rows: DailyBar[]) {
   return { high, low, price, ratioHighLow, ratioNowHigh };
 }
 
+function sanitizeCodes(codes: string[]): string[] {
+  const uniq = new Set<string>();
+  for (const c of codes) {
+    const code = c.trim();
+    if (!/^\d{4}$/.test(code)) continue;
+    uniq.add(code);
+  }
+  return [...uniq];
+}
+
+async function resolveUniverse(args: { provider: DataProvider; date: string; codes?: string[] }) {
+  const { provider, date } = args;
+
+  if (args.codes && args.codes.length > 0) {
+    const codes = sanitizeCodes(args.codes);
+    if (codes.length > 0) {
+      return {
+        universeKey: `${date}_codes_${codes.join("-")}`,
+        universeCodes: codes,
+        universeSource: "query" as const,
+      };
+    }
+  }
+
+  try {
+    const u = await getTomorrowPicksUniverse({ provider, date, limit: 50 });
+    const codes = sanitizeCodes(u.codes);
+    if (codes.length > 0) {
+      return {
+        universeKey: u.universeKey,
+        universeCodes: codes,
+        universeSource: "tomorrow-picks" as const,
+      };
+    }
+  } catch (error: any) {
+    return {
+      universeKey: `${date}_fallback-universe`,
+      universeCodes: FALLBACK_UNIVERSE_CODES,
+      universeSource: "fallback" as const,
+      universeError: String(error?.message ?? error),
+    };
+  }
+
+  return {
+    universeKey: `${date}_fallback-universe`,
+    universeCodes: FALLBACK_UNIVERSE_CODES,
+    universeSource: "fallback" as const,
+    universeError: "universe is empty",
+  };
+}
+
 export async function handlePullbackChances(args: {
   provider: DataProvider;
   dbProvider?: DbProvider;
@@ -117,17 +183,9 @@ export async function handlePullbackChances(args: {
 }): Promise<PullbackChancesResponse> {
   const { provider, dbProvider, date, refresh = false } = args;
 
-  let universeKey = `${date}_tomorrow-picks`;
-  let universeCodes: string[] = [];
-
-  if (args.codes && args.codes.length > 0) {
-    universeKey = `${date}_codes_${args.codes.join("-")}`;
-    universeCodes = args.codes;
-  } else {
-    const u = await getTomorrowPicksUniverse({ provider, date, limit: 50 });
-    universeKey = u.universeKey;
-    universeCodes = u.codes;
-  }
+  const universe = await resolveUniverse({ provider, date, codes: args.codes });
+  const universeKey = universe.universeKey;
+  const universeCodes = universe.universeCodes;
 
   const key = keyOf(date, universeKey);
 
@@ -137,10 +195,12 @@ export async function handlePullbackChances(args: {
   }
 
   const to = date;
-  const from = computeDefaultFrom();
+  const from = computeFrom(date);
 
   const debug: any = {
     requestedCodes: universeCodes,
+    universeSource: universe.universeSource,
+    universeError: universe.universeError,
     from,
     to,
     perCode: [] as any[],
@@ -163,15 +223,16 @@ export async function handlePullbackChances(args: {
         continue;
       }
 
-      // 期間別に切り出し（営業日換算の厳密化は後で。まずは動く実装を優先）
-      const last10 = rows.slice(-10); // ≒2週間（営業日10日）
-      const last40 = rows.slice(-40); // ≒2ヶ月（営業日40日）
+      const last10 = rows.slice(-10);
+      const last40 = rows.slice(-40);
+      if (last10.length < 10 || last40.length < 40) {
+        debug.skippedTooShort++;
+      }
 
       const m10 = calcMetrics(last10);
       const m40 = calcMetrics(last40);
       if (!m10 || !m40) continue;
 
-      // 要件
       const isShort = m10.ratioHighLow >= 1.5 && m10.ratioNowHigh <= 0.8;
       const isMid = m40.ratioHighLow >= 2.0 && m40.ratioNowHigh <= 0.8;
 

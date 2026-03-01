@@ -1,92 +1,116 @@
-import { Router } from "express";
 import { MockProvider } from "./dataProviders/mockProvider.js";
 import { handleTomorrowPicks } from "./tomorrowPicks.js";
 import { handlePullbackChances } from "./pullbackChances.js";
-function isRefreshOn(req) {
-    return String(req.query?.refresh ?? "") === "1";
+function defaultAnalysisDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    const y = d.getFullYear();
+    const m = `${d.getMonth() + 1}`.padStart(2, "0");
+    const dd = `${d.getDate()}`.padStart(2, "0");
+    return `${y}-${m}-${dd}`;
 }
-export function makeRoutes(provider, dbProvider) {
-    const r = Router();
-    r.get("/health", (_req, res) => {
-        res.json({ ok: true, ts: new Date().toISOString() });
+function isLegacySchemaError(error) {
+    const msg = String(error?.message ?? error);
+    return msg.includes("no such column: json") || msg.includes("no such table");
+}
+export function createRoutes(args) {
+    const { router, provider, dbProvider } = args;
+    router.get("/api/health", (_req, res) => {
+        res.json({ ok: true, now: new Date().toISOString() });
     });
-    // 明日注目：dbProviderも渡す（kvキャッシュを使える）
-    r.get("/tomorrow-picks", handleTomorrowPicks({ provider, dbProvider }));
-    // 絶好の押し目買いチャンス（最優先）
-    r.get("/pullback-chances", handlePullbackChances({ provider, dbProvider }));
-    r.get("/earnings-watchlist", async (req, res) => {
-        const date = String(req.query.date ?? "");
-        if (!date)
-            return res.status(400).json({ error: "date is required. e.g. 2026-02-10" });
-        const refresh = isRefreshOn(req);
-        if (refresh) {
-            if (!dbProvider)
-                return res.status(400).json({ error: "refresh=1 requires dbProvider (sqlite mode)" });
-            try {
-                const mock = new MockProvider();
-                const generated = await mock.getEarningsWatchlist(date);
-                await dbProvider.upsertEarningsWatchlist(generated);
-                return res.json({ ...generated, source: "generated" });
-            }
-            catch (e) {
-                return res.status(500).json({ error: String(e?.message ?? e) });
-            }
-        }
+    router.get("/api/earnings-watchlist", async (req, res) => {
+        const date = String(req.query.date ?? "").trim() || defaultAnalysisDate();
         try {
-            const out = await provider.getEarningsWatchlist(date);
-            const source = dbProvider && provider === dbProvider ? "db" : "generated";
-            return res.json({ ...out, source });
+            const data = await provider.getEarningsWatchlist(date);
+            res.json({
+                date,
+                key: `${date}_earnings-watchlist`,
+                items: data.items,
+                fetchedAt: data.fetchedAt,
+                source: data.source === "db" ? "db" : "generated",
+            });
         }
-        catch {
-            if (!dbProvider)
-                return res.status(500).json({ error: "failed to fetch earnings-watchlist" });
-            try {
+        catch (e) {
+            if (isLegacySchemaError(e)) {
                 const mock = new MockProvider();
-                const generated = await mock.getEarningsWatchlist(date);
-                await dbProvider.upsertEarningsWatchlist(generated);
-                return res.json({ ...generated, source: "generated" });
+                const data = await mock.getEarningsWatchlist(date);
+                res.json({
+                    date,
+                    key: `${date}_earnings-watchlist`,
+                    items: data.items,
+                    fetchedAt: data.fetchedAt,
+                    source: "generated",
+                    warning: "sqlite schema mismatch; fallback=mock",
+                });
+                return;
             }
-            catch (e2) {
-                return res.status(500).json({ error: String(e2?.message ?? e2) });
-            }
+            res.status(500).json({ error: String(e?.message ?? e) });
         }
     });
-    r.get("/rankings", async (req, res) => {
-        const date = String(req.query.date ?? "");
-        if (!date)
-            return res.status(400).json({ error: "date is required. e.g. 2026-02-10" });
-        const refresh = isRefreshOn(req);
-        if (refresh) {
-            if (!dbProvider)
-                return res.status(400).json({ error: "refresh=1 requires dbProvider (sqlite mode)" });
-            try {
-                const mock = new MockProvider();
-                const generated = await mock.getRankings(date);
-                await dbProvider.upsertRankings(generated);
-                return res.json({ ...generated, source: "generated" });
-            }
-            catch (e) {
-                return res.status(500).json({ error: String(e?.message ?? e) });
-            }
-        }
+    router.get("/api/rankings", async (req, res) => {
+        const date = String(req.query.date ?? "").trim() || defaultAnalysisDate();
         try {
-            const out = await provider.getRankings(date);
-            const source = dbProvider && provider === dbProvider ? "db" : "generated";
-            return res.json({ ...out, source });
+            const data = await provider.getRankings(date);
+            res.json({
+                date,
+                key: `${date}_rankings`,
+                items: data.items,
+                fetchedAt: data.fetchedAt,
+                source: data.source === "db" ? "db" : "generated",
+            });
         }
-        catch {
-            if (!dbProvider)
-                return res.status(500).json({ error: "failed to fetch rankings" });
-            try {
+        catch (e) {
+            if (isLegacySchemaError(e)) {
                 const mock = new MockProvider();
-                const generated = await mock.getRankings(date);
-                await dbProvider.upsertRankings(generated);
-                return res.json({ ...generated, source: "generated" });
+                const data = await mock.getRankings(date);
+                res.json({
+                    date,
+                    key: `${date}_rankings`,
+                    items: data.items,
+                    fetchedAt: data.fetchedAt,
+                    source: "generated",
+                    warning: "sqlite schema mismatch; fallback=mock",
+                });
+                return;
             }
-            catch (e2) {
-                return res.status(500).json({ error: String(e2?.message ?? e2) });
-            }
+            res.status(500).json({ error: String(e?.message ?? e) });
         }
     });
-    return r;
+    router.get("/api/tomorrow-picks", async (req, res) => {
+        const date = String(req.query.date ?? "").trim() || defaultAnalysisDate();
+        const refresh = String(req.query.refresh ?? "0") === "1";
+        try {
+            const out = await handleTomorrowPicks({ provider, dbProvider, date, refresh });
+            res.json(out);
+        }
+        catch (e) {
+            if (isLegacySchemaError(e)) {
+                const mock = new MockProvider();
+                const out = await handleTomorrowPicks({ provider: mock, date, refresh: true });
+                res.json({ ...out, source: "generated", warning: "sqlite schema mismatch; fallback=mock" });
+                return;
+            }
+            res.status(500).json({ error: String(e?.message ?? e) });
+        }
+    });
+    router.get("/api/pullback-chances", async (req, res) => {
+        const date = String(req.query.date ?? "").trim() || defaultAnalysisDate();
+        const refresh = String(req.query.refresh ?? "0") === "1";
+        const codesRaw = String(req.query.codes ?? "").trim();
+        const codes = codesRaw ? codesRaw.split(",").map((x) => x.trim()).filter(Boolean) : undefined;
+        try {
+            const out = await handlePullbackChances({ provider, dbProvider, date, refresh, codes });
+            res.json(out);
+        }
+        catch (e) {
+            if (isLegacySchemaError(e)) {
+                const mock = new MockProvider();
+                const out = await handlePullbackChances({ provider: mock, date, refresh: true, codes });
+                res.json({ ...out, source: "generated", warning: "sqlite schema mismatch; fallback=mock" });
+                return;
+            }
+            res.status(500).json({ error: String(e?.message ?? e) });
+        }
+    });
+    return router;
 }

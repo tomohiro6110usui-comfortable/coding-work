@@ -11,8 +11,8 @@ export function addDays(date: Date, days: number) {
   return d;
 }
 
-/** ✅ 今日 - (12週間+3日) */
+/** ✅ 今日 - 90日 */
 export function defaultAnalysisDate(): string {
   const now = new Date();
-  return yyyyMmDd(addDays(now, -(12 * 7 + 3)));
+  return yyyyMmDd(addDays(now, -90));
 }

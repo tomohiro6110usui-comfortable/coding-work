@@ -86,7 +86,7 @@ export default function PullbackChancesPage({ date }: Props) {
             </thead>
             <tbody>
               {rows.map((x) => (
-                <Row key={`${x.term}-${x.code}`} x={x} />
+                <Row key={`${x.bucket}-${x.code}`} x={x} />
               ))}
             </tbody>
           </table>
@@ -99,12 +99,12 @@ export default function PullbackChancesPage({ date }: Props) {
 function Row({ x }: { x: PullbackChanceItem }) {
   return (
     <tr>
-      <td style={td}>{x.term === "short" ? "短期" : "中期"}</td>
+      <td style={td}>{x.bucket === "short" ? "短期" : "中期"}</td>
       <td style={tdMono}>{x.code}</td>
       <td style={td}>{x.name}</td>
       <td style={td}>{x.industry}</td>
       <td style={tdRight}>{x.price}</td>
-      <td style={tdRight}>{x.ratioHL.toFixed(2)}</td>
+      <td style={tdRight}>{x.ratioHighLow.toFixed(2)}</td>
       <td style={tdRight}>{x.ratioNowHigh.toFixed(2)}</td>
       <td style={tdRight}>{x.high}</td>
       <td style={tdRight}>{x.low}</td>
