@@ -1,58 +1,45 @@
+// server/index.ts
 import express from "express";
 import cors from "cors";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
-import { makeRoutes } from "./routes.js";
-import { MockProvider } from "./dataProviders/mockProvider.js";
-import { JQuantsProvider } from "./dataProviders/jquantsProvider.js";
+import { createRoutes } from "./routes.js";
 import { openDb } from "./db/sqlite.js";
 import { SqliteProvider } from "./dataProviders/sqliteProvider.js";
+import { MockProvider } from "./dataProviders/mockProvider.js";
+import { JQuantsProvider } from "./dataProviders/jquantsProvider.js";
 const PORT = Number(process.env.PORT ?? 8787);
-/**
- * provider切替（基本は sqlite 優先）
- * - sqlite: DBから返す。未登録なら routes 側が Mock生成してDB保存する
- * - mock: 常に生成
- * - jquants: 将来用
- */
-function makeProvider() {
-    const mode = String(process.env.DATA_PROVIDER ?? "sqlite").toLowerCase();
-    if (mode === "jquants") {
-        const apiBaseUrl = String(process.env.JQUANTS_BASE_URL ?? "https://example.invalid");
-        return { type: "jquants", provider: new JQuantsProvider(apiBaseUrl) };
-    }
-    if (mode === "mock") {
-        return { type: "mock", provider: new MockProvider() };
-    }
-    // default: sqlite
-    const db = openDb();
-    const sqliteProvider = new SqliteProvider(db);
-    return { type: "sqlite", provider: sqliteProvider, dbProvider: sqliteProvider };
-}
-const { provider, dbProvider } = makeProvider();
+// 任意: DB保存先（無ければデフォルト）
+const DB_PATH = process.env.SQLITE_PATH ?? "data/rule-poc.sqlite";
+// 任意: J-Quants API Base URL（無ければデフォルト）
+const JQUANTS_API_BASE_URL = process.env.JQUANTS_API_BASE_URL ?? "https://api.jquants.com";
+// provider 選択: PROVIDER があればそれを優先。
+// なければ、JQUANTS_EMAIL/PASSWORD があれば jquants、それ以外は sqlite。
+const providerName = (process.env.PROVIDER ??
+    (process.env.JQUANTS_EMAIL && process.env.JQUANTS_PASSWORD ? "jquants" : "sqlite")).toLowerCase();
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "3mb" }));
-app.use("/api", makeRoutes(provider, dbProvider));
-// ===== dist配信（distが無くても落ちない） =====
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const distClient = path.resolve(__dirname, "../dist");
-const indexHtml = path.join(distClient, "index.html");
-app.use(express.static(distClient));
-app.get(/.*/, (_req, res) => {
-    if (!fs.existsSync(indexHtml)) {
-        return res.status(404).send([
-            "[server] dist/index.html not found.",
-            "You are probably running in dev mode (Vite serves the frontend).",
-            "If you want production integration:",
-            "  1) npm run build:all",
-            "  2) npm run start",
-        ].join("\n"));
-    }
-    return res.sendFile(indexHtml);
-});
+app.use(express.json());
+// --- DB provider（sqlite を使えるときだけ有効化）---
+let sqliteProvider;
+try {
+    const db = openDb(DB_PATH);
+    sqliteProvider = new SqliteProvider(db); // ★ 必須引数 db を渡す
+}
+catch (e) {
+    console.warn("[server] sqlite disabled:", e?.message ?? e);
+    sqliteProvider = undefined;
+}
+// --- Data provider 選択 ---
+const provider = providerName === "jquants"
+    ? new JQuantsProvider(JQUANTS_API_BASE_URL) // ★ 必須引数 apiBaseUrl を渡す
+    : providerName === "mock"
+        ? new MockProvider()
+        : sqliteProvider ?? new MockProvider(); // sqlite が死んでたら保険で mock
+// --- routes ---
+const router = express.Router();
+createRoutes({ router, provider, dbProvider: sqliteProvider });
+app.use(router);
 app.listen(PORT, () => {
     console.log(`[server] listening on http://localhost:${PORT}`);
     console.log(`[server] health: http://localhost:${PORT}/api/health`);
+    console.log(`[server] provider: ${providerName}`);
 });

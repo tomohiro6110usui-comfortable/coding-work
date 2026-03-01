@@ -1,109 +1,63 @@
-function qStr(v) {
-    return String(v ?? "").trim();
-}
-function isRefresh(req) {
-    return qStr(req.query.refresh) === "1";
-}
-function makeKey(date) {
+function keyOf(date) {
     return `${date}_tomorrow-picks`;
 }
-function safeArr(x) {
-    return Array.isArray(x) ? x : [];
+function uniqByCode(items) {
+    const m = new Map();
+    for (const it of items)
+        m.set(it.code, it);
+    return [...m.values()];
 }
-function nowIso() {
-    return new Date().toISOString();
-}
-/**
- * 「当日決算 + 反応（ランキング）」を軽く加点して並べる PoCロジック
- * - 監視優先度の最適化が目的
- */
-function buildTomorrowPicks(date, wl, rk) {
-    const base = safeArr(wl.items).map((x) => ({
-        code: String(x.code),
-        name: String(x.name ?? ""),
-        market: String(x.market ?? ""),
-        score: 10,
-        reasons: ["決算監視（当日）"],
-    }));
-    const up = safeArr(rk.up);
-    const down = safeArr(rk.down);
-    const addScore = (code, delta, reason) => {
-        const hit = base.find((b) => b.code === code);
-        if (hit) {
-            hit.score += delta;
-            hit.reasons.push(reason);
-        }
-    };
-    for (const u of up) {
-        const code = String(u.code ?? "");
-        if (code)
-            addScore(code, 5, "上昇ランキング");
-    }
-    for (const d of down) {
-        const code = String(d.code ?? "");
-        if (code)
-            addScore(code, 2, "下落ランキング（反応あり）");
-    }
-    base.sort((a, b) => b.score - a.score || a.code.localeCompare(b.code));
-    return base.slice(0, 50);
-}
-export function handleTomorrowPicks(args) {
-    const { provider, dbProvider } = args;
-    return async (req, res) => {
-        const date = qStr(req.query.date);
-        if (!date)
-            return res.status(400).json({ error: "date is required. e.g. 2026-02-10" });
-        const refresh = isRefresh(req);
-        const key = makeKey(date);
-        if (!refresh && dbProvider) {
-            try {
-                const cached = dbProvider.getJson(key);
-                if (cached && cached.date === date && Array.isArray(cached.items)) {
-                    const out = { ...cached, source: "db" };
-                    return res.json(out);
-                }
-            }
-            catch {
-                // ignore
-            }
-        }
-        try {
-            const wl = await provider.getEarningsWatchlist(date);
-            const rk = await provider.getRankings(date);
-            const items = buildTomorrowPicks(date, wl, rk);
-            const out = { date, key, items, fetchedAt: nowIso(), source: "generated" };
-            if (dbProvider) {
-                try {
-                    dbProvider.setJson(key, out);
-                }
-                catch {
-                    // ignore
-                }
-            }
-            return res.json(out);
-        }
-        catch (e) {
-            return res.status(500).json({ error: String(e?.message ?? e) });
-        }
-    };
-}
-/**
- * pullback-chances は別モジュールから universe を作るために公開
- */
 export async function getTomorrowPicksUniverse(args) {
-    const { date, provider, dbProvider, refresh } = args;
-    const universeKey = makeKey(date);
-    if (!refresh && dbProvider) {
-        const cached = dbProvider.getJson(universeKey);
-        if (cached && cached.date === date && Array.isArray(cached.items)) {
-            return { universeKey, items: cached.items, source: "db" };
-        }
+    const { provider, date, limit = 50 } = args;
+    const [watch, ranks] = await Promise.all([
+        provider.getEarningsWatchlist(date),
+        provider.getRankings(date),
+    ]);
+    const watchCodes = watch.items.map((x) => x.code);
+    const rankCodes = ranks.items.map((x) => x.code);
+    const codes = uniqByCode([...watchCodes, ...rankCodes].map((code) => ({ code })))
+        .map((x) => x.code)
+        .slice(0, limit);
+    return { universeKey: `${date}_tomorrow-picks`, codes };
+}
+export async function handleTomorrowPicks(args) {
+    const { provider, dbProvider, date, refresh = false } = args;
+    const key = keyOf(date);
+    if (dbProvider && !refresh) {
+        const cached = await dbProvider.getJson(key);
+        if (cached)
+            return { ...cached, source: "db" };
     }
-    const wl = await provider.getEarningsWatchlist(date);
-    const rk = await provider.getRankings(date);
-    const items = buildTomorrowPicks(date, wl, rk);
-    const out = { date, key: universeKey, items, fetchedAt: nowIso(), source: "generated" };
+    const [watch, ranks] = await Promise.all([
+        provider.getEarningsWatchlist(date),
+        provider.getRankings(date),
+    ]);
+    // スコアはPoC的。重要なのは「監視優先度の並び替え」
+    const scoreMap = new Map();
+    for (const w of watch.items) {
+        const cur = scoreMap.get(w.code) ?? { code: w.code, name: w.name, market: w.market, score: 0, reasons: [] };
+        cur.score += 5;
+        cur.reasons.push("watchlist");
+        scoreMap.set(w.code, cur);
+    }
+    for (const r of ranks.items) {
+        const cur = scoreMap.get(r.code) ?? { code: r.code, name: r.name, market: r.market, score: 0, reasons: [] };
+        cur.score += 3;
+        cur.reasons.push("rankings");
+        scoreMap.set(r.code, cur);
+    }
+    const items = [...scoreMap.values()]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 50)
+        .map((x) => ({ code: x.code, name: x.name, market: x.market, score: x.score, reasons: x.reasons }));
+    const out = {
+        date,
+        key,
+        items,
+        fetchedAt: new Date().toISOString(),
+        source: "generated",
+    };
     if (dbProvider)
-        dbProvider.setJson(universeKey, out);
-    return { universeKey, items, source: "generated" };
+        await dbProvider.setJson(key, out);
+    return out;
 }

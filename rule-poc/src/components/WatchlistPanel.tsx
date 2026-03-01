@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { fetchEarningsWatchlist, type WatchlistResponse } from "../lib/api";
+import { fetchEarningsWatchlist, type ApiSource, type WatchlistResponse } from "../lib/api";
 import { defaultAnalysisDate } from "../lib/date";
 
-function SourceBadge({ source }: { source?: "db" | "generated" }) {
+function SourceBadge({ source }: { source?: ApiSource }) {
   const label = source ?? "unknown";
   const style: CSSProperties = {
     display: "inline-block",
@@ -51,12 +51,11 @@ export default function WatchlistPanel() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-         <h2 style={{ margin: 0 }}>決算監視（Watchlist）</h2>
--        <SourceBadge source={data?.source} />
-+        <SourceBadge source={uiSource} />
-         <span style={{ opacity: 0.85 }}>件数: {count}</span>
-       </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>決算監視（Watchlist）</h2>
+        <SourceBadge source={data?.source} />
+        <span style={{ opacity: 0.85 }}>件数: {count}</span>
+      </div>
 
       <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>

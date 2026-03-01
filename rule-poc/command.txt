@@ -1,0 +1,181 @@
+===============================
+■ ディレクトリ移動
+===============================
+
+cd rule-poc
+→ プロジェクトのルートへ移動
+
+cd server
+→ サーバーフォルダへ移動
+
+cd src
+→ フロントエンドのソースフォルダへ移動
+
+cd ..
+→ 一つ上の階層へ戻る
+
+dir   (Windows)
+ls    (Mac/Linux)
+→ フォルダ・ファイル一覧表示
+
+
+===============================
+■ 初回セットアップ
+===============================
+
+npm install
+→ 現在のディレクトリの依存パッケージをインストール
+
+cd server
+npm install
+→ server側の依存パッケージをインストール
+
+
+===============================
+■ サーバー起動
+===============================
+
+npm run dev
+→ 開発モードでサーバー起動（ts-node / nodemon 等）
+
+cd server
+npm run dev
+→ serverフォルダ内で起動
+
+npm start
+→ 本番モード起動（ビルド済み前提）
+
+npx ts-node index.ts
+→ TypeScriptを直接実行（環境による）
+
+
+===============================
+■ サーバー停止
+===============================
+
+Ctrl + C
+→ ターミナル上でサーバー停止
+
+
+===============================
+■ ビルド
+===============================
+
+npm run build
+→ TypeScriptをビルド（dist生成）
+
+cd server
+npm run build
+→ serverのみビルド
+
+
+===============================
+■ TypeScriptトラブル時
+===============================
+
+Ctrl + Shift + P
+→ TypeScript: Restart TS server
+→ VSCodeのTSキャッシュリセット
+
+
+===============================
+■ SQLite関連
+===============================
+
+del data\rule-poc.sqlite        (Windows)
+rm data/rule-poc.sqlite         (Mac/Linux)
+→ DBファイル削除（完全リセット）
+
+
+===============================
+■ J-Quants 環境変数（PowerShell）
+===============================
+
+$env:JQUANTS_EMAIL="your@email"
+$env:JQUANTS_PASSWORD="password"
+$env:JQUANTS_API_BASE_URL="https://api.jquants.com"
+$env:PROVIDER="jquants"
+
+→ J-Quants APIを使用する設定
+
+
+===============================
+■ J-Quants 環境変数（Mac/Linux）
+===============================
+
+export JQUANTS_EMAIL="your@email"
+export JQUANTS_PASSWORD="password"
+export JQUANTS_API_BASE_URL="https://api.jquants.com"
+export PROVIDER="jquants"
+
+
+===============================
+■ Provider切替
+===============================
+
+$env:PROVIDER="mock"        (Windows)
+export PROVIDER="mock"      (Mac)
+
+→ Mockデータ使用
+
+$env:PROVIDER="sqlite"
+→ SQLite使用
+
+
+===============================
+■ API確認
+===============================
+
+http://localhost:8787/api/health
+→ サーバー疎通確認
+
+http://localhost:8787/api/earnings-watchlist?date=2026-03-01
+→ 決算ウォッチリストAPI確認
+
+
+===============================
+■ フル安全起動手順
+===============================
+
+cd rule-poc
+npm install
+
+cd server
+npm install
+npm run dev
+
+→ 別ターミナルで
+
+cd rule-poc
+npm run dev
+
+→ フロント起動
+
+
+===============================
+■ 完全リセット
+===============================
+
+cd rule-poc
+rm -rf node_modules
+rm package-lock.json
+npm install
+
+cd server
+rm -rf node_modules
+npm install
+
+→ 依存関係完全再構築
+
+
+===============================
+■ 現在の推奨起動手順
+===============================
+
+cd rule-poc/server
+npm run dev
+
+→ 別ターミナルで
+
+cd rule-poc
+npm run dev
