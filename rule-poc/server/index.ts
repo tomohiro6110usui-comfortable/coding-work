@@ -2,6 +2,9 @@
 import express from "express";
 import cors from "cors";
 import { createRoutes } from "./routes.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { openDb } from "./db/sqlite.js";
 import { SqliteProvider } from "./dataProviders/sqliteProvider.js";
@@ -26,6 +29,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distDir = path.resolve(__dirname, "../dist");
+const distIndexPath = path.join(distDir, "index.html");
+
 // --- DB provider（sqlite を使えるときだけ有効化）---
 let sqliteProvider: SqliteProvider | undefined;
 try {
@@ -48,6 +56,26 @@ const provider =
 const router = express.Router();
 createRoutes({ router, provider, dbProvider: sqliteProvider });
 app.use(router);
+
+if (fs.existsSync(distIndexPath)) {
+  app.use(express.static(distDir));
+  app.get("/{*path}", (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      next();
+      return;
+    }
+
+    res.sendFile(distIndexPath);
+  });
+} else {
+  app.get("/", (_req, res) => {
+    res.type("text/plain; charset=utf-8").send([
+      "rule-poc server is running.",
+      `API health: http://localhost:${PORT}/api/health`,
+      "Client is not built yet. Run `npm run dev` for UI or `npm run build:client` to serve static files here.",
+    ].join("\n"));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
