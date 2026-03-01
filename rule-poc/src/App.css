@@ -1,0 +1,124 @@
+.AppRoot {
+  min-height: 100vh;
+  background: #f5f5f7;
+  color: #111;
+}
+
+.TopBar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.TopBarTitle .AppName {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.TopBarTitle .AppSubtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.TopBarRight {
+  display: flex;
+  align-items: center;
+}
+
+.DateField {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+}
+
+.DateField span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.DateField input {
+  border: none;
+  outline: none;
+  font-size: 13px;
+  background: transparent;
+}
+
+.Tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 24px 14px 24px;
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.Tab {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.10);
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.Tab:hover {
+  border-color: rgba(0,0,0,0.18);
+}
+
+.Tab.Active {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+.Main {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 24px 28px 24px;
+}
+
+.Card {
+  background: #fff;
+  border-radius: 20px;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+  padding: 18px 18px 16px 18px;
+}
+
+.CardHeader {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  margin-bottom: 14px;
+}
+
+.CardHeader h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.Meta {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.FooterNote {
+  margin-top: 14px;
+  font-size: 12px;
+  opacity: 0.75;
+  line-height: 1.55;
+}

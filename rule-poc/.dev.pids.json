@@ -1,0 +1,9 @@
+﻿{
+    "pids":  [
+                 32256,
+                 33368
+             ],
+    "root":  "C:\\work\\rule-poc",
+    "startedAt":  "2026-02-15T07:05:39",
+    "note":  "Stop with: npm run stop  (or powershell -ExecutionPolicy Bypass -File .\\stop.ps1)"
+}
