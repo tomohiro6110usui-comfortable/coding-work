@@ -44,7 +44,8 @@ export class SqliteProvider {
     // -----------------------
     async getEarningsWatchlist(date) {
         // 新スキーマ: key/date/json/fetchedAt
-        if (this.hasColumn("earnings_watchlist", "json")) {
+        if (this.hasColumn("earnings_watchlist", "json") &&
+            this.hasColumn("earnings_watchlist", "fetchedAt")) {
             try {
                 const key = `${date}_earnings-watchlist`;
                 const row = this.db
@@ -87,7 +88,7 @@ export class SqliteProvider {
     }
     async getRankings(date) {
         // 新スキーマ: key/date/json/fetchedAt
-        if (this.hasColumn("rankings", "json")) {
+        if (this.hasColumn("rankings", "json") && this.hasColumn("rankings", "fetchedAt")) {
             try {
                 const key = `${date}_rankings`;
                 const row = this.db

@@ -17,7 +17,7 @@ function defaultAnalysisDate() {
 
 function isLegacySchemaError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error);
-  return msg.includes("no such column: json") || msg.includes("no such table");
+  return msg.includes("no such column") || msg.includes("no such table");
 }
 
 export function createRoutes(args: {
