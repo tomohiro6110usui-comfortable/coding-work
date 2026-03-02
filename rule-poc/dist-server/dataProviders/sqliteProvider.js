@@ -4,7 +4,7 @@ export class SqliteProvider {
         this.db = db;
     }
     // -----------------------
-    // DataProvider（既存互換）
+    // DataProvider・域里蟄倅ｺ呈鋤・・
     // -----------------------
     async getEarningsWatchlist(date) {
         const key = `${date}_earnings-watchlist`;
@@ -27,7 +27,7 @@ export class SqliteProvider {
         return { ...parsed, fetchedAt: row.fetchedAt, source: "db" };
     }
     // -----------------------
-    // DbProvider（KVキャッシュ）
+    // DbProvider・・V繧ｭ繝｣繝・す繝･・・
     // -----------------------
     async getJson(key) {
         const row = this.db

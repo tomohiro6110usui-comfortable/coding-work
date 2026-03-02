@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   DataProvider,
   DbProvider,
   EarningsWatchlistResult,
@@ -10,7 +10,7 @@ export class SqliteProvider implements DataProvider, DbProvider {
   constructor(private db: SqliteDb) {}
 
   // -----------------------
-  // DataProvider（既存互換）
+  // DataProvider・域里蟄倅ｺ呈鋤・・
   // -----------------------
   async getEarningsWatchlist(date: string): Promise<EarningsWatchlistResult> {
     const key = `${date}_earnings-watchlist`;
@@ -35,7 +35,7 @@ export class SqliteProvider implements DataProvider, DbProvider {
   }
 
   // -----------------------
-  // DbProvider（KVキャッシュ）
+  // DbProvider・・V繧ｭ繝｣繝・す繝･・・
   // -----------------------
   async getJson<T>(key: string): Promise<T | null> {
     const row = this.db
@@ -58,5 +58,5 @@ export class SqliteProvider implements DataProvider, DbProvider {
   }
 }
 
-// 「sqliteProvider.ts から export する」要件対応（typeの再エクスポート）
+// 縲茎qliteProvider.ts 縺九ｉ export 縺吶ｋ縲崎ｦ∽ｻｶ蟇ｾ蠢懶ｼ・ype縺ｮ蜀阪お繧ｯ繧ｹ繝昴・繝茨ｼ・
 export type { DbProvider } from "./provider.js";
