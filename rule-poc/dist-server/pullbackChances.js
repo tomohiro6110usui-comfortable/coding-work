@@ -23,16 +23,24 @@ const FALLBACK_UNIVERSE_CODES = [
 function keyOf(date, universeKey) {
     return `${date}_pullback-chances_${universeKey}`;
 }
-function ymd(d) {
-    const y = d.getFullYear();
-    const m = `${d.getMonth() + 1}`.padStart(2, "0");
-    const dd = `${d.getDate()}`.padStart(2, "0");
+function ymdUtc(d) {
+    const y = d.getUTCFullYear();
+    const m = `${d.getUTCMonth() + 1}`.padStart(2, "0");
+    const dd = `${d.getUTCDate()}`.padStart(2, "0");
     return `${y}-${m}-${dd}`;
 }
 function computeFrom(date) {
-    const base = new Date(`${date}T00:00:00+09:00`);
-    const from = new Date(base.getTime() - 90 * 24 * 60 * 60 * 1000);
-    return ymd(from);
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (!m)
+        return date;
+    const y = Number(m[1]);
+    const mm = Number(m[2]);
+    const dd = Number(m[3]);
+    const baseUtc = new Date(Date.UTC(y, mm - 1, dd));
+    const fromUtc = new Date(baseUtc.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const from = ymdUtc(fromUtc);
+    // Guard against locale/date parsing anomalies seen on some Windows environments.
+    return from <= date ? from : date;
 }
 async function fetchJQuantsDailyBars(args) {
     const apiKey = process.env.JQUANTS_API_KEY;
