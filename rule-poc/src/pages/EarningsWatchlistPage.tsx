@@ -16,8 +16,12 @@ export default function EarningsWatchlistPage({ date }: Props) {
     setErr(null);
 
     fetchEarningsWatchlist(date, refresh)
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setErr(String((e as any)?.message ?? e)))
+      .then((d) => {
+        if (alive) setData(d);
+      })
+      .catch((e) => {
+        if (alive) setErr(String((e as any)?.message ?? e));
+      })
       .finally(() => {
         if (!alive) return;
         setLoading(false);
@@ -31,10 +35,12 @@ export default function EarningsWatchlistPage({ date }: Props) {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ opacity: 0.75 }}>date: {date}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ opacity: 0.75 }}>
+          source: {data?.source ?? "-"} / fetchedAt: {data?.fetchedAt ?? "-"} / count: {data?.items.length ?? 0}
+        </div>
         <button onClick={() => setRefresh(true)} disabled={loading} style={{ marginLeft: "auto" }}>
-          再取得（refresh=1）
+          refresh
         </button>
       </div>
 
@@ -46,25 +52,25 @@ export default function EarningsWatchlistPage({ date }: Props) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#fafafa" }}>
-                <th style={th}>コード</th>
-                <th style={th}>銘柄名</th>
-                <th style={th}>市場</th>
-                <th style={th}>決算日</th>
+                <th style={th}>code</th>
+                <th style={th}>name</th>
+                <th style={th}>market</th>
+                <th style={th}>earningsDate</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((x) => (
-                <tr key={`${x.code}-${x.earningsDate}`}>
+                <tr key={`${x.code}-${x.earningsDate ?? ""}`}>
                   <td style={tdMono}>{x.code}</td>
-                  <td style={td}>{x.name}</td>
-                  <td style={td}>{x.market}</td>
-                  <td style={td}>{x.earningsDate}</td>
+                  <td style={td}>{x.name ?? ""}</td>
+                  <td style={td}>{x.market ?? ""}</td>
+                  <td style={td}>{x.earningsDate ?? ""}</td>
                 </tr>
               ))}
               {data.items.length === 0 && (
                 <tr>
                   <td colSpan={4} style={{ padding: 12, opacity: 0.7 }}>
-                    データがありません
+                    no data
                   </td>
                 </tr>
               )}

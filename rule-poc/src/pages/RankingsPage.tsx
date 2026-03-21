@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
-import { fetchRankings, type RankingsResponse } from "../lib/api";
+import { fetchRankings, type RankingItem, type RankingsResponse } from "../lib/api";
 
 type Props = { date: string };
 
@@ -16,8 +16,12 @@ export default function RankingsPage({ date }: Props) {
     setErr(null);
 
     fetchRankings(date, refresh)
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setErr(String((e as any)?.message ?? e)))
+      .then((d) => {
+        if (alive) setData(d);
+      })
+      .catch((e) => {
+        if (alive) setErr(String((e as any)?.message ?? e));
+      })
       .finally(() => {
         if (!alive) return;
         setLoading(false);
@@ -29,64 +33,61 @@ export default function RankingsPage({ date }: Props) {
     };
   }, [date, refresh]);
 
+  const rows = data?.items ?? [];
+
   return (
     <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ opacity: 0.75 }}>date: {date}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ opacity: 0.75 }}>
+          source: {data?.source ?? "-"} / fetchedAt: {data?.fetchedAt ?? "-"} / count: {rows.length}
+        </div>
         <button onClick={() => setRefresh(true)} disabled={loading} style={{ marginLeft: "auto" }}>
-          再取得（refresh=1）
+          refresh
         </button>
       </div>
 
       {loading && <div>loading...</div>}
       {err && <div style={{ color: "crimson" }}>error: {err}</div>}
 
-      {data && (
-        <div style={{ display: "grid", gap: 12 }}>
-          <Section title="値上がり" items={data.up} />
-          <Section title="値下がり" items={data.down} />
+      {!loading && !err && rows.length === 0 && (
+        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>no data</div>
+      )}
+
+      {rows.length > 0 && (
+        <div style={{ overflowX: "auto", border: "1px solid #e6e6e6", borderRadius: 14 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "#fafafa" }}>
+                <th style={th}>code</th>
+                <th style={th}>name</th>
+                <th style={th}>market</th>
+                <th style={thRight}>value</th>
+                <th style={thRight}>pct</th>
+                <th style={th}>reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <Row key={x.code} x={x} />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
 
-function Section(props: { title: string; items: RankingsResponse["up"] }) {
+function Row({ x }: { x: RankingItem }) {
   return (
-    <section style={{ overflowX: "auto", border: "1px solid #e6e6e6", borderRadius: 14 }}>
-      <div style={{ padding: "10px 12px", background: "#fafafa", borderBottom: "1px solid #eee" }}>
-        <b>{props.title}</b>
-      </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr>
-            <th style={th}>コード</th>
-            <th style={th}>銘柄名</th>
-            <th style={thRight}>終値</th>
-            <th style={thRight}>騰落%</th>
-            <th style={th}>要因</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.items.map((x) => (
-            <tr key={`${props.title}-${x.code}`}>
-              <td style={tdMono}>{x.code}</td>
-              <td style={td}>{x.name}</td>
-              <td style={tdRight}>{x.close}</td>
-              <td style={tdRight}>{x.changePct}</td>
-              <td style={td}>{x.reasonLite ?? ""}</td>
-            </tr>
-          ))}
-          {props.items.length === 0 && (
-            <tr>
-              <td colSpan={5} style={{ padding: 12, opacity: 0.7 }}>
-                データがありません
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </section>
+    <tr>
+      <td style={tdMono}>{x.code}</td>
+      <td style={td}>{x.name ?? ""}</td>
+      <td style={td}>{x.market ?? ""}</td>
+      <td style={tdRight}>{x.value ?? x.close ?? ""}</td>
+      <td style={tdRight}>{x.pct ?? x.changePct ?? ""}</td>
+      <td style={td}>{x.reason ?? x.reasonLite ?? ""}</td>
+    </tr>
   );
 }
 

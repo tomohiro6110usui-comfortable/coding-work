@@ -38,6 +38,8 @@ export type RankingsResult = {
 export type DbProvider = {
   getJson: <T>(key: string) => Promise<T | null>;
   setJson: <T>(key: string, value: T) => Promise<void>;
+  getJsonBatch?: <T>(keys: string[]) => Promise<Record<string, T>>;
+  setJsonBatch?: <T>(items: Array<{ key: string; value: T }>) => Promise<void>;
 };
 
 export type DataProvider = {

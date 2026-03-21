@@ -15,13 +15,13 @@ export default function App() {
   const title = useMemo(() => {
     switch (tab) {
       case "pullback":
-        return "絶好の押し目買いチャンス";
+        return "Pullback Chances";
       case "tomorrow":
-        return "明日注目（API）";
+        return "Tomorrow Picks";
       case "earnings":
-        return "決算監視TOP50（API）";
+        return "Earnings Watchlist";
       case "rankings":
-        return "ランキング（API）";
+        return "Rankings";
     }
   }, [tab]);
 
@@ -29,8 +29,8 @@ export default function App() {
     <div className="AppRoot">
       <header className="TopBar">
         <div className="TopBarTitle">
-          <div className="AppName">投資ルール管理 + 決算監視 + ランキング + 明日注目 + 押し目抽出</div>
-          <div className="AppSubtitle">監視優先度を最適化するための統合ツール</div>
+          <div className="AppName">rule-poc dashboard</div>
+          <div className="AppSubtitle">earnings, rankings, tomorrow picks, and pullback scan</div>
         </div>
 
         <div className="TopBarRight">
@@ -43,16 +43,16 @@ export default function App() {
 
       <nav className="Tabs">
         <TabButton active={tab === "pullback"} onClick={() => setTab("pullback")}>
-          押し目買いチャンス
+          Pullback
         </TabButton>
         <TabButton active={tab === "tomorrow"} onClick={() => setTab("tomorrow")}>
-          明日注目（API）
+          Tomorrow
         </TabButton>
         <TabButton active={tab === "earnings"} onClick={() => setTab("earnings")}>
-          決算監視TOP50（API）
+          Earnings
         </TabButton>
         <TabButton active={tab === "rankings"} onClick={() => setTab("rankings")}>
-          ランキング（API）
+          Rankings
         </TabButton>
       </nav>
 
@@ -68,12 +68,6 @@ export default function App() {
           {tab === "earnings" && <EarningsWatchlistPage date={date} />}
           {tab === "rankings" && <RankingsPage date={date} />}
         </section>
-
-        <footer className="FooterNote">
-          これは買い推奨ツールではなく「反応が出た銘柄を並べ替える順番最適化ツール」です。
-          <br />
-          押し目抽出は“当てる”のではなく“監視優先度を上げる”のが目的です。
-        </footer>
       </main>
     </div>
   );

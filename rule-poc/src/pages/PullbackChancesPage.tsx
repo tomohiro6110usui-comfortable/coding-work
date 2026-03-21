@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { fetchPullbackChances, type PullbackChancesResponse, type PullbackChanceItem } from "../lib/api";
+import {
+  fetchPullbackChances,
+  type PullbackChanceItem,
+  type PullbackChancesResponse,
+  type PullbackSelectionRequest,
+} from "../lib/api";
 
 type Props = { date: string };
+
+function toFiniteNumber(text: string, fallback: number): number {
+  const n = Number(text);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toPositiveInt(text: string, fallback: number): number {
+  const n = Math.floor(Number(text));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 export default function PullbackChancesPage({ date }: Props) {
   const [refresh, setRefresh] = useState(false);
@@ -10,14 +25,27 @@ export default function PullbackChancesPage({ date }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [data, setData] = useState<PullbackChancesResponse | null>(null);
 
+  const [minScoreText, setMinScoreText] = useState("58");
+  const [maxPerBucketText, setMaxPerBucketText] = useState("40");
+  const [requireRebound, setRequireRebound] = useState(true);
+  const [selection, setSelection] = useState<PullbackSelectionRequest>({
+    minScore: 58,
+    maxPerBucket: 40,
+    requireRebound: true,
+  });
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setErr(null);
 
-    fetchPullbackChances(date, refresh)
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setErr(String((e as any)?.message ?? e)))
+    fetchPullbackChances(date, refresh, undefined, selection)
+      .then((d) => {
+        if (alive) setData(d);
+      })
+      .catch((e) => {
+        if (alive) setErr(String((e as any)?.message ?? e));
+      })
       .finally(() => {
         if (!alive) return;
         setLoading(false);
@@ -27,45 +55,108 @@ export default function PullbackChancesPage({ date }: Props) {
     return () => {
       alive = false;
     };
-  }, [date, refresh]);
+  }, [date, refresh, selection]);
 
   const rows = useMemo(() => {
     const st = data?.shortTerm ?? [];
     const mt = data?.midTerm ?? [];
-    return [...st, ...mt];
+    return [...st, ...mt].sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.ratioNowHigh - b.ratioNowHigh);
   }, [data]);
+
+  const failedCount = data?.debug?.failedCount ?? 0;
+  const rateLimit429Count = data?.debug?.rateLimit429Count ?? 0;
+  const retriedCount = data?.debug?.retriedCount ?? 0;
+  const recoveredByRetryCount = data?.debug?.recoveredByRetryCount ?? 0;
+  const failedCodes = (data?.debug?.perCode ?? []).filter((x) => !x.ok).map((x) => x.code);
+  const succeeded = (data?.debug?.perCode ?? []).filter((x) => x.ok);
+  const succeededCodes = succeeded.map((x) => x.code);
+  const showNoCandidates = !loading && !err && rows.length === 0 && failedCount === 0;
+
+  const selectionSummary = data?.debug?.selectionSummary;
+  const nearMissTop = data?.debug?.nearMissTop ?? [];
+
+  const applySelection = () => {
+    const minScore = Math.max(0, Math.min(100, toFiniteNumber(minScoreText, 58)));
+    const maxPerBucket = Math.max(1, toPositiveInt(maxPerBucketText, 40));
+    setSelection({ minScore, maxPerBucket, requireRebound });
+    setRefresh(true);
+  };
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 8, padding: 12, border: "1px solid #e6e6e6", borderRadius: 14, background: "#fcfcfc" }}>
+        <div style={{ fontWeight: 700 }}>selection settings</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={labelRow}>
+            min score
+            <input value={minScoreText} onChange={(e) => setMinScoreText(e.target.value)} style={input} />
+          </label>
+          <label style={labelRow}>
+            max per bucket
+            <input value={maxPerBucketText} onChange={(e) => setMaxPerBucketText(e.target.value)} style={input} />
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={requireRebound} onChange={(e) => setRequireRebound(e.target.checked)} />
+            require rebound
+          </label>
+          <button onClick={applySelection} disabled={loading}>
+            apply filters
+          </button>
+          <button onClick={() => setRefresh(true)} disabled={loading} style={{ marginLeft: "auto" }}>
+            refresh
+          </button>
+        </div>
+      </div>
+
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ opacity: 0.75 }}>
           source: {data?.source ?? "-"} / universeKey: {data?.universeKey ?? "-"} / fetchedAt: {data?.fetchedAt ?? "-"}
         </div>
-
-        <button onClick={() => setRefresh(true)} disabled={loading} style={{ marginLeft: "auto" }}>
-          再取得（refresh=1）
-        </button>
-      </div>
-
-      <div style={{ color: "#333", lineHeight: 1.55 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>判定条件</div>
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          <li>
-            <b>短期（直近2週間）</b>：最高値/最安値 ≥ 1.5 かつ 現在値/最高値 ≤ 0.8
-          </li>
-          <li>
-            <b>中期（直近2か月）</b>：最高値/最安値 ≥ 2.0 かつ 現在値/最高値 ≤ 0.8
-          </li>
-        </ul>
       </div>
 
       {loading && <div>loading...</div>}
       {err && <div style={{ color: "crimson" }}>error: {err}</div>}
 
-      {!loading && !err && rows.length === 0 && (
-        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>
-          条件に合う銘柄がありません（ユニバースが小さい場合は、ランキング上位のみが対象になります）
+      {!loading && !err && selectionSummary && (
+        <div style={{ padding: 12, border: "1px solid #e6e6e6", borderRadius: 14, background: "#fcfcfc", fontSize: 13 }}>
+          selection: minScore={selectionSummary.minScore} / maxPerBucket={selectionSummary.maxPerBucket} / requireRebound=
+          {selectionSummary.requireRebound ? "1" : "0"} / short={selectionSummary.shortCandidates} / mid={selectionSummary.midCandidates}
         </div>
+      )}
+
+      {!loading && !err && failedCount > 0 && (
+        <div style={{ padding: 12, border: "1px solid #f3c4c4", borderRadius: 14, background: "#fff7f7" }}>
+          fetch failures: {failedCount} / 429: {rateLimit429Count} / retried: {retriedCount} / recovered: {recoveredByRetryCount}
+          {failedCodes.length > 0 && <div style={{ marginTop: 6, fontSize: 12 }}>failed codes: {failedCodes.join(", ")}</div>}
+        </div>
+      )}
+
+      {!loading && !err && (
+        <div style={{ display: "grid", gap: 10, padding: 12, border: "1px solid #e6e6e6", borderRadius: 14, background: "#fcfcfc" }}>
+          <div style={{ fontWeight: 700 }}>price fetch status</div>
+          <div style={{ fontSize: 13, opacity: 0.9 }}>
+            success: {succeeded.length} / failed: {failedCount} / cache hit: {data?.debug?.cacheHitCount ?? 0}
+          </div>
+          {succeededCodes.length > 0 && <div style={{ fontSize: 12, lineHeight: 1.5 }}>success codes: {succeededCodes.join(", ")}</div>}
+          {failedCodes.length > 0 && (
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: "#8a1f1f" }}>failed codes: {failedCodes.join(", ")}</div>
+          )}
+        </div>
+      )}
+
+      {!loading && !err && nearMissTop.length > 0 && (
+        <div style={{ display: "grid", gap: 6, padding: 12, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>
+          <div style={{ fontWeight: 700 }}>near miss top</div>
+          {nearMissTop.slice(0, 8).map((x) => (
+            <div key={x.code} style={{ fontSize: 12, lineHeight: 1.5 }}>
+              {x.code} / score {x.score?.toFixed?.(1) ?? x.score} / gap {x.thresholdGap?.toFixed?.(3) ?? x.thresholdGap}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showNoCandidates && (
+        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 14, background: "#fafafa" }}>no candidates</div>
       )}
 
       {rows.length > 0 && (
@@ -73,20 +164,23 @@ export default function PullbackChancesPage({ date }: Props) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#fafafa" }}>
-                <th style={th}>区分</th>
-                <th style={th}>コード</th>
-                <th style={th}>銘柄名</th>
-                <th style={th}>業種</th>
-                <th style={thRight}>現在株価</th>
-                <th style={thRight}>最高値/最安値</th>
-                <th style={thRight}>現在値/最高値</th>
-                <th style={thRight}>最高値</th>
-                <th style={thRight}>最安値</th>
+                <th style={th}>term</th>
+                <th style={th}>code</th>
+                <th style={thRight}>score</th>
+                <th style={th}>grade</th>
+                <th style={thRight}>price</th>
+                <th style={thRight}>high/low</th>
+                <th style={thRight}>now/high</th>
+                <th style={thRight}>pullback%</th>
+                <th style={thRight}>rebound3%</th>
+                <th style={thRight}>vol20%</th>
+                <th style={th}>reasons</th>
+                <th style={th}>risk</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((x) => (
-                <Row key={`${x.term}-${x.code}`} x={x} />
+              {rows.map((x, i) => (
+                <Row key={`${x.bucket}-${x.code}-${i}`} x={x} />
               ))}
             </tbody>
           </table>
@@ -99,19 +193,24 @@ export default function PullbackChancesPage({ date }: Props) {
 function Row({ x }: { x: PullbackChanceItem }) {
   return (
     <tr>
-      <td style={td}>{x.term === "short" ? "短期" : "中期"}</td>
+      <td style={td}>{x.bucket}</td>
       <td style={tdMono}>{x.code}</td>
-      <td style={td}>{x.name}</td>
-      <td style={td}>{x.industry}</td>
-      <td style={tdRight}>{x.price}</td>
-      <td style={tdRight}>{x.ratioHL.toFixed(2)}</td>
+      <td style={tdRight}>{x.score?.toFixed(1) ?? "-"}</td>
+      <td style={td}>{x.grade ?? "-"}</td>
+      <td style={tdRight}>{x.price.toFixed(2)}</td>
+      <td style={tdRight}>{x.ratioHighLow.toFixed(2)}</td>
       <td style={tdRight}>{x.ratioNowHigh.toFixed(2)}</td>
-      <td style={tdRight}>{x.high}</td>
-      <td style={tdRight}>{x.low}</td>
+      <td style={tdRight}>{x.pullbackPct?.toFixed(1) ?? "-"}</td>
+      <td style={tdRight}>{x.rebound3Pct?.toFixed(1) ?? "-"}</td>
+      <td style={tdRight}>{x.volatility20Pct?.toFixed(1) ?? "-"}</td>
+      <td style={td}>{(x.reasons ?? []).slice(0, 2).join(" / ")}</td>
+      <td style={td}>{(x.riskFlags ?? []).join(", ") || "-"}</td>
     </tr>
   );
 }
 
+const labelRow: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 };
+const input: CSSProperties = { width: 72, padding: "4px 6px" };
 const th: CSSProperties = { textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #eee", whiteSpace: "nowrap" };
 const thRight: CSSProperties = { ...th, textAlign: "right" };
 const td: CSSProperties = { padding: "10px 12px", borderBottom: "1px solid #f2f2f2", whiteSpace: "nowrap" };
